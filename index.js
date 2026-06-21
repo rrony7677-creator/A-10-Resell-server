@@ -31,18 +31,72 @@ async function run() {
     const ordersCollection = database.collection("orders");
 
     // GET all products (filter দিয়ে) — 
+    // app.get('/api/products', async (req, res) => {
+    //   const query = {};
+    //   if (req.query.sellerId) {
+    //     query.sellerId = req.query.sellerId;
+    //   }
+    //   if (req.query.status) {
+    //     query.status = req.query.status;
+    //   }
+    //   const cursor = productsCollection.find(query);
+    //   const result = await cursor.toArray();
+    //   res.send(result);
+    // });
+
     app.get('/api/products', async (req, res) => {
-      const query = {};
-      if (req.query.sellerId) {
-        query.sellerId = req.query.sellerId;
-      }
-      if (req.query.status) {
-        query.status = req.query.status;
-      }
-      const cursor = productsCollection.find(query);
-      const result = await cursor.toArray();
-      res.send(result);
+  const { sellerId, status, search, category, condition, sort, page, limit } = req.query;
+  const query = {};
+
+  if (sellerId) {
+    // seller এর নিজের My Products page এর জন্য — সব status দেখাবে
+    query.sellerId = sellerId;
+    if (status) query.status = status;
+  } else {
+    // public browsing — শুধু approved product দেখাবে
+    query.status = status || "available";
+  }
+
+  if (category) query.category = category;
+  if (condition) query.condition = condition;
+
+  if (search) {
+    query.$or = [
+      { title: { $regex: search, $options: "i" } },
+      { category: { $regex: search, $options: "i" } },
+    ];
+  }
+
+  let sortOption = { _id: -1 }; // newest first
+  if (sort === "price_asc") sortOption = { price: 1 };
+  if (sort === "price_desc") sortOption = { price: -1 };
+
+  // page ও limit দিলেই paginated response, না হলে আগের মতোই plain array (My Products page এ কিছু বদলাতে হবে না)
+  if (page && limit) {
+    const pageNum = parseInt(page);
+    const limitNum = parseInt(limit);
+    const skip = (pageNum - 1) * limitNum;
+
+    const totalCount = await productsCollection.countDocuments(query);
+    const result = await productsCollection
+      .find(query)
+      .sort(sortOption)
+      .skip(skip)
+      .limit(limitNum)
+      .toArray();
+
+    return res.send({
+      products: result,
+      totalCount,
+      totalPages: Math.ceil(totalCount / limitNum),
+      currentPage: pageNum,
     });
+  }
+
+  const cursor = productsCollection.find(query).sort(sortOption);
+  const result = await cursor.toArray();
+  res.send(result);
+});
 
     // ✅ নতুন: একটা single product বের করার জন্য (Edit page এ লাগবে)
     app.get('/api/products/:id', async (req, res) => {
