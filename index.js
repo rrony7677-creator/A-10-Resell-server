@@ -29,6 +29,8 @@ async function run() {
     const database = client.db("resell_db");
     const productsCollection = database.collection("products");
     const ordersCollection = database.collection("orders");
+    const paymentsCollection = database.collection("payments");
+
 
     // GET all products (filter দিয়ে) — 
     // app.get('/api/products', async (req, res) => {
@@ -159,6 +161,15 @@ app.patch('/api/orders/:id/status', async (req, res) => {
   const filter = { _id: new ObjectId(id) };
   const updatedDoc = { $set: { orderStatus: status, updatedAt: new Date() } };
   const result = await ordersCollection.updateOne(filter, updatedDoc);
+  res.send(result);
+});
+
+// payment system
+
+app.post('/api/payments', async (req, res) => {
+  const payment = req.body;
+  payment.createdAt = new Date();
+  const result = await paymentsCollection.insertOne(payment);
   res.send(result);
 });
 
