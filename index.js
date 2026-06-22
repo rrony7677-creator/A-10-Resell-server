@@ -173,6 +173,8 @@ app.post('/api/payments', async (req, res) => {
   res.send(result);
 });
 
+// Reviews
+
     await client.db("admin").command({ ping: 1 });
     console.log("Pinged your deployment. You successfully connected to MongoDB!");
   } finally {
