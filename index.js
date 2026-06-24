@@ -168,12 +168,12 @@ app.get('/api/orders/:id', async (req, res) => {
   res.send(result);
 });
 // POST — নতুন order তৈরি করার জন্য (Checkout/Payment success এর পর এটাই কল হয়)
-// app.post('/api/orders', async (req, res) => {
-//   const order = req.body;
-//   order.createdAt = new Date();
-//   const result = await ordersCollection.insertOne(order);
-//   res.send(result);
-// });
+app.post('/api/orders', async (req, res) => {
+  const order = req.body;
+  order.createdAt = new Date();
+  const result = await ordersCollection.insertOne(order);
+  res.send(result);
+});
 
 // PATCH order status — Accept, Reject, Update delivery status সব এটা দিয়েই হবে
 app.patch('/api/orders/:id/status', async (req, res) => {
