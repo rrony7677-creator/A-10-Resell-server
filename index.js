@@ -30,6 +30,7 @@ async function run() {
     const productsCollection = database.collection("products");
     const ordersCollection = database.collection("orders");
     const paymentsCollection = database.collection("payments");
+    const wishlistCollection = database.collection("wishlist");
 
 
     // GET all products (filter দিয়ে) — 
@@ -133,14 +134,27 @@ async function run() {
 
     // Orders Page
     // GET orders — seller এর incoming orders, status দিয়ে filter করা যাবে
+// app.get('/api/orders', async (req, res) => {
+//   const query = {};
+//   if (req.query.sellerId) {
+//     query.sellerId = req.query.sellerId;
+//   }
+//   if (req.query.status) {
+//     query.orderStatus = req.query.status;
+//   }
+//   const cursor = ordersCollection.find(query).sort({ createdAt: -1 });
+//   const result = await cursor.toArray();
+//   res.send(result);
+// });
+
+// order page
+
 app.get('/api/orders', async (req, res) => {
+  const { sellerId, buyerId, status } = req.query;
   const query = {};
-  if (req.query.sellerId) {
-    query.sellerId = req.query.sellerId;
-  }
-  if (req.query.status) {
-    query.orderStatus = req.query.status;
-  }
+  if (sellerId) query.sellerId = sellerId;
+  if (buyerId) query["buyerInfo.userId"] = buyerId;
+  if (status) query.orderStatus = status;
   const cursor = ordersCollection.find(query).sort({ createdAt: -1 });
   const result = await cursor.toArray();
   res.send(result);
@@ -153,6 +167,13 @@ app.get('/api/orders/:id', async (req, res) => {
   const result = await ordersCollection.findOne(query);
   res.send(result);
 });
+// POST — নতুন order তৈরি করার জন্য (Checkout/Payment success এর পর এটাই কল হয়)
+// app.post('/api/orders', async (req, res) => {
+//   const order = req.body;
+//   order.createdAt = new Date();
+//   const result = await ordersCollection.insertOne(order);
+//   res.send(result);
+// });
 
 // PATCH order status — Accept, Reject, Update delivery status সব এটা দিয়েই হবে
 app.patch('/api/orders/:id/status', async (req, res) => {
@@ -166,6 +187,24 @@ app.patch('/api/orders/:id/status', async (req, res) => {
 
 // payment system
 
+// app.get('/api/payments', async (req, res) => {
+//   const { buyerId } = req.query;
+//   const query = buyerId ? { buyerId } : {};
+//   const cursor = paymentsCollection.find(query).sort({ createdAt: -1 });
+//   const result = await cursor.toArray();
+//   res.send(result);
+// });
+
+app.get('/api/payments', async (req, res) => {
+  const { buyerId, transactionCheck } = req.query;
+  const query = {};
+  if (buyerId) query.buyerId = buyerId;
+  if (transactionCheck) query.transactionId = transactionCheck;
+  const cursor = paymentsCollection.find(query).sort({ createdAt: -1 });
+  const result = await cursor.toArray();
+  res.send(result);
+});
+
 app.post('/api/payments', async (req, res) => {
   const payment = req.body;
   payment.createdAt = new Date();
@@ -173,7 +212,31 @@ app.post('/api/payments', async (req, res) => {
   res.send(result);
 });
 
-// Reviews
+//Wishlist
+app.get('/api/wishlist', async (req, res) => {
+  const { buyerId } = req.query;
+  const query = buyerId ? { buyerId } : {};
+  const cursor = wishlistCollection.find(query).sort({ createdAt: -1 });
+  const result = await cursor.toArray();
+  res.send(result);
+});
+
+app.post('/api/wishlist', async (req, res) => {
+  const { buyerId, productId } = req.body;
+  const existing = await wishlistCollection.findOne({ buyerId, productId });
+  if (existing) return res.send({ alreadyExists: true, _id: existing._id });
+
+  const item = { ...req.body, createdAt: new Date() };
+  const result = await wishlistCollection.insertOne(item);
+  res.send(result);
+});
+app.delete('/api/wishlist', async (req, res) => {
+  const { buyerId, productId } = req.query;
+  const result = await wishlistCollection.deleteOne({ buyerId, productId });
+  res.send(result);
+});
+
+
 
     await client.db("admin").command({ ping: 1 });
     console.log("Pinged your deployment. You successfully connected to MongoDB!");
