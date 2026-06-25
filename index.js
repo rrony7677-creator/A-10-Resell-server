@@ -27,6 +27,7 @@ async function run() {
     await client.connect();
 
     const database = client.db("resell_db");
+    const userCollection = database.collection("user");
     const productsCollection = database.collection("products");
     const ordersCollection = database.collection("orders");
     const paymentsCollection = database.collection("payments");
@@ -47,22 +48,21 @@ async function run() {
     //   res.send(result);
     // });
 
-    app.get('/api/products', async (req, res) => {
-  const { sellerId, status, search, category, condition, sort, page, limit } = req.query;
+app.get('/api/products', async (req, res) => {
+  const { sellerId, status, search, category, condition, sort, page, limit, all } = req.query;
   const query = {};
 
   if (sellerId) {
-    // seller এর নিজের My Products page এর জন্য — সব status দেখাবে
     query.sellerId = sellerId;
     if (status) query.status = status;
+  } else if (all === "true") {
+    if (status) query.status = status; // admin — filter না দিলে সব status দেখাবে
   } else {
-    // public browsing — শুধু approved product দেখাবে
-    query.status = status || "available";
+    query.status = status || "available"; // public browsing
   }
 
   if (category) query.category = category;
   if (condition) query.condition = condition;
-
   if (search) {
     query.$or = [
       { title: { $regex: search, $options: "i" } },
@@ -70,30 +70,17 @@ async function run() {
     ];
   }
 
-  let sortOption = { _id: -1 }; // newest first
+  let sortOption = { _id: -1 };
   if (sort === "price_asc") sortOption = { price: 1 };
   if (sort === "price_desc") sortOption = { price: -1 };
 
-  // page ও limit দিলেই paginated response, না হলে আগের মতোই plain array (My Products page এ কিছু বদলাতে হবে না)
   if (page && limit) {
     const pageNum = parseInt(page);
     const limitNum = parseInt(limit);
     const skip = (pageNum - 1) * limitNum;
-
     const totalCount = await productsCollection.countDocuments(query);
-    const result = await productsCollection
-      .find(query)
-      .sort(sortOption)
-      .skip(skip)
-      .limit(limitNum)
-      .toArray();
-
-    return res.send({
-      products: result,
-      totalCount,
-      totalPages: Math.ceil(totalCount / limitNum),
-      currentPage: pageNum,
-    });
+    const result = await productsCollection.find(query).sort(sortOption).skip(skip).limit(limitNum).toArray();
+    return res.send({ products: result, totalCount, totalPages: Math.ceil(totalCount / limitNum), currentPage: pageNum });
   }
 
   const cursor = productsCollection.find(query).sort(sortOption);
@@ -234,6 +221,46 @@ app.delete('/api/wishlist', async (req, res) => {
   const { buyerId, productId } = req.query;
   const result = await wishlistCollection.deleteOne({ buyerId, productId });
   res.send(result);
+});
+
+
+
+// Admin: সব stats
+app.get('/api/admin/stats', async (req, res) => {
+  const totalUsers = await userCollection.countDocuments();
+  const totalProducts = await productsCollection.countDocuments();
+  const totalOrders = await ordersCollection.countDocuments();
+  res.send({ totalUsers, totalProducts, totalOrders });
+});
+
+// Admin: সব user
+app.get('/api/admin/users', async (req, res) => {
+  const result = await userCollection.find({}).toArray();
+  res.send(result);
+});
+
+app.patch('/api/admin/users/:id/status', async (req, res) => {
+  const { status } = req.body;
+  const result = await userCollection.updateOne(
+    { _id: new ObjectId(req.params.id) },
+    { $set: { status } }
+  );
+  res.send(result);
+});
+
+app.delete('/api/admin/users/:id', async (req, res) => {
+  const result = await userCollection.deleteOne({ _id: new ObjectId(req.params.id) });
+  res.send(result);
+});
+
+// Public
+
+app.get('/api/stats/public', async (req, res) => {
+  const totalProducts = await productsCollection.countDocuments({ status: "available" });
+  const totalSellers = await userCollection.countDocuments({ role: "seller" });
+  const totalBuyers = await userCollection.countDocuments({ role: "buyer" });
+  const completedOrders = await ordersCollection.countDocuments({ orderStatus: "delivered" });
+  res.send({ totalProducts, totalSellers, totalBuyers, completedOrders });
 });
 
 
