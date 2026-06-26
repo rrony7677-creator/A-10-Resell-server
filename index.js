@@ -2,6 +2,7 @@ const express = require('express');
 const app = express();
 const port = 5000;
 const cors = require('cors');
+const { createRemoteJWKSet, jwtVerify } = require('jose');
 require('dotenv').config();
 app.use(cors());
 app.use(express.json());
@@ -32,6 +33,40 @@ async function run() {
     const ordersCollection = database.collection("orders");
     const paymentsCollection = database.collection("payments");
     const wishlistCollection = database.collection("wishlist");
+
+
+const JWKS = createRemoteJWKSet(
+  new URL(`${process.env.NEXT_PUBLIC_BETTER_AUTH_URL || 'http://localhost:3000'}/api/auth/jwks`)
+);
+
+const verifyToken = async (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith('Bearer ')) {
+    return res.status(401).send({ message: 'Unauthorized: no token provided' });
+  }
+  try {
+    const token = authHeader.split(' ')[1];
+    const { payload } = await jwtVerify(token, JWKS);
+    req.decoded = payload; 
+    next();
+  } catch (err) {
+    return res.status(403).send({ message: 'Forbidden: invalid or expired token' });
+  }
+};
+
+
+const verifyRole = (...allowedRoles) => async (req, res, next) => {
+  try {
+    const currentUser = await userCollection.findOne({ _id: new ObjectId(req.decoded.sub) });
+    if (!currentUser || !allowedRoles.includes(currentUser.role)) {
+      return res.status(403).send({ message: 'Forbidden: insufficient role' });
+    }
+    req.currentUser = currentUser;
+    next();
+  } catch (err) {
+    return res.status(403).send({ message: 'Forbidden' });
+  }
+};
 
 
     // GET all products (filter দিয়ে) — 
@@ -96,14 +131,15 @@ app.get('/api/products', async (req, res) => {
       res.send(result);
     });
 
-    app.post('/api/products', async (req, res) => {
+    app.post('/api/products', verifyToken, verifyRole('seller'), async (req, res) => {
       const product = req.body;
+      product.sellerId = req.currentUser._id.toString();
       const result = await productsCollection.insertOne(product);
       res.send(result);
     });
 
-    // ✅ নতুন: Update করার জন্য
-    app.patch('/api/products/:id', async (req, res) => {
+    
+    app.patch('/api/products/:id', verifyToken, verifyRole('seller','admin'), async (req, res) => {
       const id = req.params.id;
       const filter = { _id: new ObjectId(id) };
       const updatedDoc = { $set: req.body };
@@ -111,8 +147,8 @@ app.get('/api/products', async (req, res) => {
       res.send(result);
     });
 
-    // ✅ নতুন: Delete করার জন্য
-    app.delete('/api/products/:id', async (req, res) => {
+    
+    app.delete('/api/products/:id',verifyToken, verifyRole('seller','admin'), async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
       const result = await productsCollection.deleteOne(query);
@@ -154,8 +190,8 @@ app.get('/api/orders/:id', async (req, res) => {
   const result = await ordersCollection.findOne(query);
   res.send(result);
 });
-// POST — নতুন order তৈরি করার জন্য (Checkout/Payment success এর পর এটাই কল হয়)
-app.post('/api/orders', async (req, res) => {
+
+app.post('/api/orders',verifyToken, verifyRole('buyer'), async (req, res) => {
   const order = req.body;
   order.createdAt = new Date();
   const result = await ordersCollection.insertOne(order);
@@ -163,7 +199,7 @@ app.post('/api/orders', async (req, res) => {
 });
 
 // PATCH order status — Accept, Reject, Update delivery status সব এটা দিয়েই হবে
-app.patch('/api/orders/:id/status', async (req, res) => {
+app.patch('/api/orders/:id/status',verifyToken, verifyRole('seller','admin'), async (req, res) => {
   const id = req.params.id;
   const { status } = req.body;
   const filter = { _id: new ObjectId(id) };
@@ -208,7 +244,7 @@ app.get('/api/wishlist', async (req, res) => {
   res.send(result);
 });
 
-app.post('/api/wishlist', async (req, res) => {
+app.post('/api/wishlist',verifyToken, verifyRole('buyer'), async (req, res) => {
   const { buyerId, productId } = req.body;
   const existing = await wishlistCollection.findOne({ buyerId, productId });
   if (existing) return res.send({ alreadyExists: true, _id: existing._id });
@@ -217,7 +253,7 @@ app.post('/api/wishlist', async (req, res) => {
   const result = await wishlistCollection.insertOne(item);
   res.send(result);
 });
-app.delete('/api/wishlist', async (req, res) => {
+app.delete('/api/wishlist',verifyToken, verifyRole('buyer'), async (req, res) => {
   const { buyerId, productId } = req.query;
   const result = await wishlistCollection.deleteOne({ buyerId, productId });
   res.send(result);
@@ -239,7 +275,7 @@ app.get('/api/admin/users', async (req, res) => {
   res.send(result);
 });
 
-app.patch('/api/admin/users/:id/status', async (req, res) => {
+app.patch('/api/admin/users/:id/status',verifyToken, verifyRole('admin'), async (req, res) => {
   const { status } = req.body;
   const result = await userCollection.updateOne(
     { _id: new ObjectId(req.params.id) },
@@ -248,7 +284,7 @@ app.patch('/api/admin/users/:id/status', async (req, res) => {
   res.send(result);
 });
 
-app.delete('/api/admin/users/:id', async (req, res) => {
+app.delete('/api/admin/users/:id',verifyToken, verifyRole('admin'), async (req, res) => {
   const result = await userCollection.deleteOne({ _id: new ObjectId(req.params.id) });
   res.send(result);
 });
