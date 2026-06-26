@@ -138,6 +138,18 @@ app.get('/api/products', async (req, res) => {
       res.send(result);
     });
 
+app.patch('/api/products/:id/stock', verifyToken, async (req, res) => {
+  const id = req.params.id;
+  const { decrementBy } = req.body;
+  const product = await productsCollection.findOne({ _id: new ObjectId(id) });
+  if (!product) return res.status(404).send({ message: "Product not found" });
+  const newStock = Math.max(0, (product.stockQuantity || 0) - (decrementBy || 0));
+  const result = await productsCollection.updateOne(
+    { _id: new ObjectId(id) },
+    { $set: { stockQuantity: newStock } }
+  );
+  res.send(result);
+});
     
     app.patch('/api/products/:id', verifyToken, verifyRole('seller','admin'), async (req, res) => {
       const id = req.params.id;
@@ -262,7 +274,7 @@ app.delete('/api/wishlist',verifyToken, verifyRole('buyer'), async (req, res) =>
 
 
 // Admin: সব stats
-app.get('/api/admin/stats', async (req, res) => {
+app.get('/api/admin/stats',verifyToken, verifyRole('admin'), async (req, res) => {
   const totalUsers = await userCollection.countDocuments();
   const totalProducts = await productsCollection.countDocuments();
   const totalOrders = await ordersCollection.countDocuments();
@@ -270,7 +282,7 @@ app.get('/api/admin/stats', async (req, res) => {
 });
 
 // Admin: সব user
-app.get('/api/admin/users', async (req, res) => {
+app.get('/api/admin/users',verifyToken, verifyRole('admin'), async (req, res) => {
   const result = await userCollection.find({}).toArray();
   res.send(result);
 });
